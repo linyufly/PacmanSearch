@@ -336,6 +336,12 @@ void work() {
   heap_size = 1;
 
   while (heap_size) {
+    if (f_heap[0] / num_goals <= 123 || record.size() % 10000 == 0) {
+      printf("record.size() = %d, heap_size = %d, min_f = (%d, %d)\n",
+             static_cast<int>(record.size()), heap_size,
+             f_heap[0] / num_goals, f_heap[0] % num_goals);
+    }
+
     int curr_f;
     Status curr = pop(&curr_f);
     Node curr_node = record[curr];
@@ -374,6 +380,12 @@ void work() {
 
       int g_value = curr_node.g_ + dist[curr.curr_][id];
 
+      int next_f = g_value + get_heuristic(next);
+      if (next_f < curr_f / num_goals) {
+        printf("Inconsistency found: %d, %d.\n", next_f, curr_f / num_goals);
+        exit(0);
+      }
+
       Node next_node;
 
       if (record.find(next) != record.end()) {
@@ -382,7 +394,15 @@ void work() {
           continue;
         }
 
+        if (next_node.heap_index_ == -1) {
+          printf("Heap index error: %d, %d.\n", g_value, next_node.g_);
+          printf("curr_f = (%d, %d)\n", curr_f / num_goals, curr_f % num_goals);
+          printf("next_f = %d\n", next_f);
+          exit(0);
+        }
+
         f_heap[next_node.heap_index_] -= (next_node.g_ - g_value) * num_goals;
+        record[next].g_ = g_value;
         slip_up(next_node.heap_index_);
       } else {
         record[next] = Node(g_value, id, -1);
