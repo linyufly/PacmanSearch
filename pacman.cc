@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <map>
+#include <vector>
 
 using namespace std;
 
@@ -101,9 +102,11 @@ int num_rows, num_cols;
 int num_goals;
 map<Bits, int> mst;
 map<Status, Node> record;
-Status heap[kMaxHeapSize];
-int f_heap[kMaxHeapSize];
+// Status heap[kMaxHeapSize];
+// int f_heap[kMaxHeapSize];
 int heap_size;
+vector<Status> heap;
+vector<int> f_heap;
 
 int get_mst(const Bits &bits) {
   if (mst.find(bits) != mst.end()) {
@@ -151,7 +154,12 @@ int get_mst(const Bits &bits) {
 }
 
 int get_heuristic(const Status &status) {
+  if (status.bits_.empty()) {
+    return 0;
+  }
+
   int mst = get_mst(status.bits_);
+
   int first_path = inf;
   for (int id = 0; id < num_goals; id++) {
     if (status.bits_.has_bit(id) && dist[status.curr_][id] < first_path) {
@@ -159,6 +167,46 @@ int get_heuristic(const Status &status) {
     }
   }
   return first_path + mst;
+}
+
+int longest_distance(const Bits &bits, int start) {
+  if (!bits.has_bit(start)) {
+    printf("start is not in bits.\n");
+    exit(0);
+  }
+
+  int answer = 0;
+
+  for (int id = 0; id < num_goals; id++) {
+    if (bits.has_bit(id) && dist[start][id] > answer) {
+      answer = dist[start][id];
+    }
+  }
+
+  return answer;
+}
+
+int get_upperbound(const Status &status) {
+  return 152;
+
+  if (status.bits_.empty()) {
+    return 0;
+  }
+
+  int answer = inf;
+  int mst = get_mst(status.bits_);
+
+  for (int id = 0; id < num_goals; id++) {
+    if (status.bits_.has_bit(id)) {
+      int curr_bound = dist[status.curr_][id] + mst * 2
+                       - longest_distance(status.bits_, id);
+      if (curr_bound < answer) {
+        answer = curr_bound;
+      }
+    }
+  }
+
+  return answer;
 }
 
 bool outside(int r, int c) {
@@ -307,13 +355,22 @@ Status pop(int *f_value) {
 }
 
 void push(const Status &status, int f_value) {
+  /*
   if (heap_size == kMaxHeapSize - 1) {
     printf("Heap overflow.\n");
     exit(0);
   }
+  */
 
-  heap[heap_size] = status;
-  f_heap[heap_size] = f_value;
+  // heap[heap_size] = status;
+  // f_heap[heap_size] = f_value;
+  if (heap.size() == heap_size) {
+    heap.push_back(status);
+    f_heap.push_back(f_value);
+  } else {
+    heap[heap_size] = status;
+    f_heap[heap_size] = f_value;
+  }
   heap_size++;
   record[status].heap_index_ = heap_size - 1;
 
@@ -330,22 +387,36 @@ void work() {
     }
   }
 
+  printf("Start: %d, %d\n", goal[start.curr_][0], goal[start.curr_][1]);
+
+  int upper_bound = get_upperbound(start);
+
   record[start] = Node(0, -1, 0);
-  heap[0] = start;
-  f_heap[0] = get_heuristic(start) * num_goals + (num_goals - 1);
+  // heap[0] = start;
+  // f_heap[0] = get_heuristic(start); // get_heuristic(start) * num_goals + (num_goals - 1);
+  heap.push_back(start);
+  f_heap.push_back(get_heuristic(start));
   heap_size = 1;
 
   while (heap_size) {
-    if (f_heap[0] / num_goals <= 123 || record.size() % 10000 == 0) {
-      printf("record.size() = %d, heap_size = %d, min_f = (%d, %d)\n",
-             static_cast<int>(record.size()), heap_size,
-             f_heap[0] / num_goals, f_heap[0] % num_goals);
+    if (record.size() < 10 || record.size() % 10000 == 0) {
+      // printf("record.size() = %d, heap_size = %d, min_f = (%d, %d)\n",
+      //        static_cast<int>(record.size()), heap_size,
+      //        f_heap[0] / num_goals, f_heap[0] % num_goals);
+      printf("record.size() = %d, heap_size = %d, min_f = %d, upper_bound = %d\n",
+              static_cast<int>(record.size()), heap_size, f_heap[0], upper_bound);
     }
 
     int curr_f;
     Status curr = pop(&curr_f);
     Node curr_node = record[curr];
-    int num_remaining = curr_f % num_goals;
+    // int num_remaining = curr_f % num_goals;
+    int num_remaining = 0;
+    for (int id = 0; id < num_goals; id++) {
+      if (curr.bits_.has_bit(id)) {
+        num_remaining++;
+      }
+    }
 
     if (curr.bits_.empty()) {
       printf("Solution found. The number of expanded nodes is %d. The cost is %d.\n",
@@ -381,8 +452,21 @@ void work() {
       int g_value = curr_node.g_ + dist[curr.curr_][id];
 
       int next_f = g_value + get_heuristic(next);
-      if (next_f < curr_f / num_goals) {
-        printf("Inconsistency found: %d, %d.\n", next_f, curr_f / num_goals);
+      int new_bound = g_value + get_upperbound(next);
+      if (new_bound < upper_bound) {
+        upper_bound = new_bound;
+      }
+
+      if (next_f > upper_bound) {
+        continue;
+      }
+
+      if (next_f < curr_f /* / num_goals */) {
+        // printf("Inconsistency found: %d, %d.\n", next_f, curr_f / num_goals);
+        printf("Inconsistency found: %d, %d.\n", next_f, curr_f);
+        printf("g_value = %d\n", g_value);
+        printf("h = %d\n", get_heuristic(next));
+        printf("num_remaining = %d\n", num_remaining);
         exit(0);
       }
 
@@ -396,18 +480,21 @@ void work() {
 
         if (next_node.heap_index_ == -1) {
           printf("Heap index error: %d, %d.\n", g_value, next_node.g_);
-          printf("curr_f = (%d, %d)\n", curr_f / num_goals, curr_f % num_goals);
+          // printf("curr_f = (%d, %d)\n", curr_f / num_goals, curr_f % num_goals);
+          printf("curr_f = %d\n", curr_f);
           printf("next_f = %d\n", next_f);
           exit(0);
         }
 
-        f_heap[next_node.heap_index_] -= (next_node.g_ - g_value) * num_goals;
+        // f_heap[next_node.heap_index_] -= (next_node.g_ - g_value) * num_goals;
+        f_heap[next_node.heap_index_] -= next_node.g_ - g_value;
         record[next].g_ = g_value;
         slip_up(next_node.heap_index_);
       } else {
         record[next] = Node(g_value, id, -1);
-        push(next, (g_value + get_heuristic(next)) * num_goals
-                   + (num_remaining - 1));
+        // push(next, (g_value + get_heuristic(next)) * num_goals
+        //            + (num_remaining - 1));
+        push(next, next_f);
       }
     }
   }
